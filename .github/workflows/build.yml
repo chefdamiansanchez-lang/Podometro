@@ -1,0 +1,60 @@
+name: Compilar Podometro APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar el proyecto (descomprime el zip si hace falta)
+        run: |
+          set -e
+          if [ ! -f settings.gradle.kts ]; then
+            ZIP=$(ls *.zip 2>/dev/null | head -n 1 || true)
+            if [ -z "$ZIP" ]; then
+              echo "No encontre el proyecto ni un archivo .zip en la raiz del repositorio"
+              exit 1
+            fi
+            mkdir -p _proyecto
+            unzip -q -o "$ZIP" -d _proyecto
+          fi
+          DIR=$(dirname "$(find . -name settings.gradle.kts -not -path './.git/*' | head -n 1)")
+          echo "Proyecto en: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar el APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Guardar el APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Podometro-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar el APK en Releases (descarga directa)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: podometro-v${{ github.run_number }}
+          name: Podometro v${{ github.run_number }}
+          files: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
